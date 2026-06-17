@@ -14,9 +14,20 @@ from billing_engine.discounts.base import Discount, DiscountContext
 
 class PercentageDiscount(Discount):
     def __init__(self, percentage: Decimal) -> None:
-        # TODO Day 1
-        raise NotImplementedError("Day 1: implement PercentageDiscount.__init__")
+        if not isinstance(percentage, Decimal):
+            raise TypeError("percentage must be a Decimal")
+
+        if percentage < Decimal("0"):
+            raise ValueError("percentage cannot be negative")
+
+        if percentage > Decimal("1"):
+            raise ValueError("percentage cannot be greater than 1")
+
+        self.percentage = percentage
 
     def apply(self, subtotal: Money, context: DiscountContext) -> Money:
-        # TODO Day 1
-        raise NotImplementedError("Day 1: implement PercentageDiscount.apply")
+        return Money(
+            subtotal.amount * self.percentage,
+            subtotal.currency,
+        )
+            

@@ -9,16 +9,15 @@ from billing_engine.taxes.base import TaxCalculator, TaxContext, TaxBreakdown
 
 
 class VATCalculator(TaxCalculator):
-    def __init__(self, rate: Decimal) -> None:
-        # TODO Day 1
-        #   - Validate 0 <= rate <= 1.
-        #   - Reject float.
-        #   - Store on self.
-        raise NotImplementedError("Day 1: implement VATCalculator.__init__")
+    def __init__(self, rate: Decimal, label: str = "VAT") -> None:
+        if not isinstance(rate, Decimal):
+            raise TypeError("Rate must be Decimal")
+        if not (Decimal('0') <= rate <= Decimal('1')):
+            raise ValueError("Rate must be between 0 and 1")
+        self.rate = rate
+        self.label = label
 
-    def apply(self, taxable: Money, context: TaxContext) -> TaxBreakdown:
-        # TODO Day 1
-        #   - vat = taxable * self.rate
-        #   - Return TaxBreakdown with one component (f"VAT {percent}%", vat) and total = vat.
-        #   - Tip: format the rate as a percentage cleanly.
-        raise NotImplementedError("Day 1: implement VATCalculator.apply")
+    def apply(self, taxable: Money, context: TaxContext = None) -> TaxBreakdown:
+        tax_amount = taxable * self.rate
+        components = [(self.label, tax_amount)]
+        return TaxBreakdown(components=components, total=tax_amount) 
