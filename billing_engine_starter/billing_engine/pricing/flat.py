@@ -15,6 +15,7 @@ class FlatRate(PricingStrategy):
         if not isinstance(amount, Money):
             raise TypeError("amount must be a Money instance")
 
+<<<<<<< Updated upstream
         if amount.is_negative():
             raise ValueError("amount must not be negative")
         
@@ -22,3 +23,12 @@ class FlatRate(PricingStrategy):
 
     def calculate(self, quantity: int) -> Money:
         return self.amount  
+=======
+        if amount.amount < 0:
+            raise ValueError("amount cannot be negative")
+
+        self.amount = amount
+
+    def calculate(self, quantity: int) -> Money:
+        return self.amount
+>>>>>>> Stashed changes
