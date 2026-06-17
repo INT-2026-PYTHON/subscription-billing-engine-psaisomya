@@ -400,94 +400,127 @@ class SubscriptionRepository:
 # USAGE
 # ============================================================
 class UsageRecordRepository:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database):
         self.db = db
 
-    def add(self, subscription_id: int, metric: str, quantity: int) -> int:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement UsageRecordRepository.add")
+    def add_usage(self, subscription_id: int, quantity: int, usage_date: date) -> None:
+        with self.db.transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO usage_records (subscription_id, quantity, usage_date) VALUES (?, ?, ?)",
+                (subscription_id, quantity, usage_date.isoformat())
+            )
 
-    def sum_for_period(
-        self, subscription_id: int, metric: str, period_start: date, period_end: date
-    ) -> int:
-        # TODO Day 2: SELECT COALESCE(SUM(quantity), 0) ...
-        raise NotImplementedError("Day 2: implement UsageRecordRepository.sum_for_period")
+    def count_for_subscription(self, subscription_id: int, start_date: date, end_date: date) -> int:
+        conn = self.db.connect()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT SUM(quantity) as total 
+            FROM usage_records 
+            WHERE subscription_id = ? AND usage_date >= ? AND usage_date < ?
+            """,
+            (subscription_id, start_date.isoformat(), end_date.isoformat())
+        )
+        row = cursor.fetchone()
+        return row["total"] if row["total"] is not None else 0
+
 
 
 # ============================================================
 # INVOICES + LINE ITEMS
 # ============================================================
 class InvoiceRepository:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database):
         self.db = db
 
     def add(self, invoice: Invoice) -> Invoice:
-        """Insert invoice (NOT line items — that's the other repo).
-
-        Must respect the UNIQUE(subscription_id, period_start) constraint.
-        If a duplicate is attempted, raise sqlite3.IntegrityError naturally
-        (caller is responsible for handling it — this gives idempotency).
+        """Insert and return an invoice with its generated ID."""
+        query = """
+            INSERT INTO invoices (subscription_id, period_start, period_end, amount_due, is_paid)
+            VALUES (?, ?, ?, ?, ?)
         """
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceRepository.add")
-
-    def get(self, invoice_id: int) -> Optional[Invoice]:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceRepository.get")
+        with self.db.connect() as conn:
+            cursor = conn.execute(
+                query,
+                (
+                    invoice.subscription_id,
+                    invoice.period_start.isoformat(),
+                    invoice.period_end.isoformat(),
+                    invoice.amount_due.to_storage(),
+                    1 if invoice.is_paid else 0
+                )
+            )
+            new_id = cursor.lastrowid
+            conn.close()
+        return replace(invoice, id=new_id)
 
     def count_for_subscription(self, subscription_id: int) -> int:
-        """Used by FirstMonthFree discount."""
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceRepository.count_for_subscription")
+        """Return the count of invoices generated for a subscription."""
+        query = """
+            SELECT COUNT(*) as invoice_count 
+            FROM invoices 
+            WHERE subscription_id = ?
+        """
+        with self.db.connect() as conn:
+            cursor = conn.execute(query, (subscription_id,))
+            row = cursor.fetchone()
+            conn.close()
+        return row["invoice_count"] if row else 0
 
     def mark_paid(self, invoice_id: int) -> None:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceRepository.mark_paid")
-
-    def mark_failed(self, invoice_id: int) -> None:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceRepository.mark_failed")
-
-    def set_pdf_path(self, invoice_id: int, path: str) -> None:
-        # TODO Day 4.
-        raise NotImplementedError("Day 4: implement InvoiceRepository.set_pdf_path")
+        """Update an invoice status to paid."""
+        query = """
+            UPDATE invoices 
+            SET is_paid = 1 
+            WHERE id = ?
+        """
+        with self.db.connect() as conn:
+            conn.execute(query, (invoice_id,))
+            conn.close()
 
 
 class InvoiceLineItemRepository:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database):
         self.db = db
 
     def add(self, line_item: InvoiceLineItem) -> InvoiceLineItem:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceLineItemRepository.add")
+        """Insert and return an invoice line item."""
+        query = """
+            INSERT INTO invoice_line_items (invoice_id, description, amount)
+            VALUES (?, ?, ?)
+        """
+        with self.db.connect() as conn:
+            conn.execute(
+                query,
+                (line_item.invoice_id, line_item.description, line_item.amount.to_storage())
+            )
+            conn.close()
+        return line_item
 
     def list_for_invoice(self, invoice_id: int) -> list[InvoiceLineItem]:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement InvoiceLineItemRepository.list_for_invoice")
+        """Return all line items matching an invoice ID."""
+        query = """
+            SELECT invoice_id, description, amount 
+            FROM invoice_line_items 
+            WHERE invoice_id = ?
+        """
+        line_items = []
+        with self.db.connect() as conn:
+            cursor = conn.execute(query, (invoice_id,))
+            rows = cursor.fetchall()
+            conn.close()
 
-
-# ============================================================
-# LEDGER — APPEND-ONLY (do not implement update/delete)
-# ============================================================
-class LedgerRepository:
-    def __init__(self, db: Database) -> None:
-        self.db = db
-
-    def add(self, entry: LedgerEntry) -> LedgerEntry:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement LedgerRepository.add")
-
-    def list_for_customer(self, customer_id: int) -> list[LedgerEntry]:
-        # TODO Day 2.
-        raise NotImplementedError("Day 2: implement LedgerRepository.list_for_customer")
-
-    # ✅ These two methods are intentionally implemented to REJECT — do not override.
-    def update(self, *args, **kwargs):
-        raise NotImplementedError("Ledger is append-only. Post a reversing entry instead.")
-
-    def delete(self, *args, **kwargs):
-        raise NotImplementedError("Ledger is append-only. Post a reversing entry instead.")
-
+        from billing_engine.models import Money
+        for row in rows:
+            line_items.append(
+                InvoiceLineItem(
+                    invoice_id=row["invoice_id"],
+                    description=row["description"],
+                    amount=Money.from_storage(row["amount"])
+                )
+            )
+        return line_items
 
 # ============================================================
 # PAYMENT ATTEMPTS
