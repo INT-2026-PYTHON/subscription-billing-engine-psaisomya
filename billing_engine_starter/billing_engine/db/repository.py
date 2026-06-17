@@ -15,7 +15,7 @@ Conventions:
 """
 
 from __future__ import annotations
-
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
@@ -37,23 +37,86 @@ from billing_engine.models import (
 class CustomerRepository:
     def __init__(self, db: Database) -> None:
         self.db = db
-
     def add(self, customer: Customer) -> Customer:
         """Insert and return the customer with `id` populated."""
-        # TODO Day 2
-        raise NotImplementedError("Day 2: implement CustomerRepository.add")
-
+        query = """
+            INSERT INTO customers (name, email, country_code, state_code)
+            VALUES (?, ?, ?, ?)
+        """
+        with self.db.connect() as conn:
+            cursor = conn.execute(
+                query, 
+                (customer.name, customer.email, customer.country_code, customer.state_code)
+            )
+            new_id = cursor.lastrowid
+            conn.close()
+            
+        return replace(customer, id=new_id)
+    
     def get(self, customer_id: int) -> Optional[Customer]:
-        # TODO Day 2
-        raise NotImplementedError("Day 2: implement CustomerRepository.get")
+        query = """
+            SELECT id, name, email, country_code, state_code
+            FROM customers
+            WHERE id = ?
+        """
+        with self.db.connect() as conn:
+            cursor = conn.execute(query, (customer_id,))
+            row = cursor.fetchone()
+            conn.close()
 
+        if row is None:
+            return None
+
+        return Customer(
+            id=row["id"],
+            name=row["name"],
+            email=row["email"],
+            country_code=row["country_code"],
+            state_code=row["state_code"]
+        )
     def find_by_email(self, email: str) -> Optional[Customer]:
-        # TODO Day 2
-        raise NotImplementedError("Day 2: implement CustomerRepository.find_by_email")
+        query = """
+            SELECT id, name, email, country_code, state_code
+            FROM customers
+            WHERE email = ?
+        """
+        with self.db.connect() as conn:
+            cursor = conn.execute(query, (email,))
+            row = cursor.fetchone()
+            conn.close()
 
+        if row is None:
+            return None
+
+        return Customer(
+            id=row["id"],
+            name=row["name"],
+            email=row["email"],
+            country_code=row["country_code"],
+            state_code=row["state_code"]
+        )
     def list_all(self) -> list[Customer]:
-        # TODO Day 2
-        raise NotImplementedError("Day 2: implement CustomerRepository.list_all")
+        query = """
+            SELECT id, name, email, country_code, state_code
+            FROM customers
+        """
+        customers = []
+        with self.db.connect() as conn:
+            cursor = conn.execute(query)
+            rows = cursor.fetchall()
+            conn.close()
+
+        for row in rows:
+            customers.append(
+                Customer(
+                    id=row["id"],
+                    name=row["name"],
+                    email=row["email"],
+                    country_code=row["country_code"],
+                    state_code=row["state_code"]
+                )
+            )
+        return customers
 
 
 # ============================================================
