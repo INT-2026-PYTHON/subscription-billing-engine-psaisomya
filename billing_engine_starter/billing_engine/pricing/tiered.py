@@ -26,50 +26,32 @@ from billing_engine.pricing.base import PricingStrategy
 @dataclass(frozen=True)
 class Tier:
     from_units: int
-    to_units: Optional[int]   # None means "unlimited" / open-ended
+    to_units: Optional[int]   
     unit_price: Money
 
 
 class TieredPricing(PricingStrategy):
-    """Charges across multiple price tiers based on cumulative quantity."""
 
     def __init__(self, tiers: list[Tier]) -> None:
         if not tiers:
-            raise ValueError("tiers cannot be empty")
-
-        currency = tiers[0].unit_price.currency
-
-        for i, tier in enumerate(tiers):
-            if tier.unit_price.currency != currency:
-                raise ValueError("all tiers must use the same currency")
-
-            if i > 0:
-                prev = tiers[i - 1]
-
-                if prev.to_units != tier.from_units:
-                    raise ValueError("tiers must be contiguous")
-
-        if tiers[-1].to_units is not None:
-            raise ValueError("top tier must be open ended")
-
-        self.tiers = tiers
-        self.currency = currency
+            raise ValueError("Tiers list cannot be empty")
+        self.tiers = sorted(tiers, key=lambda t: t.from_units)
 
     def calculate(self, quantity: int) -> Money:
-        if quantity < 0:
-            raise ValueError("quantity cannot be negative")
+        if quantity <= 0:
+            return Money(0, self.tiers[0].unit_price.currency)
 
-        total = 0
+        total_amount = Money(0, self.tiers[0].unit_price.currency)
+        remaining = quantity
 
         for tier in self.tiers:
-            if quantity <= tier.from_units:
+            if remaining <= 0:
                 break
 
-            upper = quantity if tier.to_units is None else min(quantity, tier.to_units)
+            tier_span = (tier.to_units - tier.from_units) if tier.to_units is not None else remaining
+            units_in_tier = min(remaining, tier_span)
 
-            units_in_tier = upper - tier.from_units
+            total_amount += tier.unit_price * units_in_tier
+            remaining -= units_in_tier
 
-            if units_in_tier > 0:
-                total += units_in_tier * tier.unit_price.amount
-
-        return Money(total, self.currency)
+        return total_amount

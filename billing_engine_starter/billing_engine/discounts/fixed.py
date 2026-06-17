@@ -8,22 +8,15 @@ CAPPING RULE: if the fixed amount exceeds the subtotal, return subtotal
 from billing_engine.money import Money
 from billing_engine.discounts.base import Discount, DiscountContext
 
-
 class FixedAmountDiscount(Discount):
     def __init__(self, amount: Money) -> None:
-        if not isinstance(amount, Money):
-            raise TypeError("amount must be a Money instance")
-
-        if amount.amount < 0:
-            raise ValueError("amount cannot be negative")
-
         self.amount = amount
 
     def apply(self, subtotal: Money, context: DiscountContext) -> Money:
-        if subtotal.currency != self.amount.currency:
-            raise ValueError("currency mismatch")
-
-        if self.amount.amount >= subtotal.amount:
+        if self.amount.currency != subtotal.currency:
+            raise ValueError(f"Currency mismatch: discount is in {self.amount.currency}, but subtotal is in {subtotal.currency}")
+            
+        if self.amount >= subtotal:
             return subtotal
-
+            
         return self.amount
