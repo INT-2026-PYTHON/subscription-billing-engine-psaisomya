@@ -37,6 +37,59 @@ def build_invoice(
     period_end: date,
     invoice_count_so_far: int,
 ) -> Invoice:
-    """Pure function. Returns an Invoice (id=None, status=DRAFT) ready to be persisted."""
-    # TODO Day 2
-    raise NotImplementedError("Day 2: implement build_invoice")
+    base_price = strategy.calculate(usage_quantity)
+    
+    currency = base_price.currency
+    line_items = []
+    
+    line_items.append(InvoiceLineItem(
+        id=None,
+        invoice_id=None,
+        description=f"Base plan charges for {plan.name}",
+        amount=base_price.amount,
+        quantity=1,
+        unit_price=base_price.amount,
+        kind=LineItemKind.BASE
+    ))
+
+    discount_amount = 0
+    if discount:
+        context = DiscountContext(invoice_count_so_far=invoice_count_so_far)
+        discount_amount = discount.apply(base_price.amount, context)
+        if discount_amount > 0:
+            line_items.append(InvoiceLineItem(
+                id=None,
+                invoice_id=None,
+                description=f"Applied discount: {discount.name}",
+                amount=-discount_amount,
+                quantity=1,
+                unit_price=-discount_amount,
+                kind=LineItemKind.DISCOUNT
+            ))
+
+    taxable_amount = max(0, base_price.amount - discount_amount)
+    
+    tax_res = tax_calc.apply(taxable_amount, tax_context)
+    for tax_line in tax_res.lines:
+        line_items.append(InvoiceLineItem(
+            id=None,
+            invoice_id=None,
+            description=f"Tax: {tax_line.name} ({tax_line.rate * 100}%)",
+            amount=tax_line.amount,
+            quantity=1,
+            unit_price=tax_line.amount,
+            kind=LineItemKind.TAX
+        ))
+
+    final_total = taxable_amount + tax_res.total
+
+    return Invoice(
+        id=None,
+        subscription_id=subscription.id,
+        customer_id=subscription.customer_id,
+        period_start=period_start,
+        period_end=period_end,
+        amount_due=Money(amount=final_total, currency=currency),
+        status=InvoiceStatus.DRAFT,
+        line_items=line_items
+    )
