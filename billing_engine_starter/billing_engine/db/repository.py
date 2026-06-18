@@ -526,24 +526,52 @@ class InvoiceLineItemRepository:
 # PAYMENT ATTEMPTS
 # ============================================================
 class PaymentAttemptRepository:
-    def __init__(self, db: Database) -> None:
+    """Repository for managing payment attempts linked to invoices."""
+
+    def __init__(self, db: Database):
         self.db = db
 
-    def add(
-        self,
-        invoice_id: int,
-        attempt_no: int,
-        status: str,
-        failure_reason: Optional[str],
-        next_retry_at: Optional[datetime],
-    ) -> int:
-        # TODO Day 3.
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.add")
+    def add(self, invoice_id: int, status: str, attempted_at: date) -> int:
+        """Insert a new payment attempt for the given invoice."""
+        query = """
+            INSERT INTO payment_attempts (invoice_id, status, attempted_at)
+            VALUES (?, ?, ?)
+        """
+        with self.db.transaction() as conn:
+            cursor = conn.execute(query, (invoice_id, status, attempted_at.isoformat()))
+            attempt_id = cursor.lastrowid
+        return attempt_id
 
     def list_for_invoice(self, invoice_id: int) -> list[dict]:
-        # TODO Day 3.
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.list_for_invoice")
+        """Fetch all payment attempts for a given invoice."""
+        query = """
+            SELECT id, invoice_id, status, attempted_at
+            FROM payment_attempts
+            WHERE invoice_id = ?
+            ORDER BY attempted_at ASC
+        """
+        with self.db.connect() as conn:
+            cursor = conn.execute(query, (invoice_id,))
+            rows = cursor.fetchall()
+            
+        return [dict(row) for row in rows]
 
-    def count_for_invoice(self, invoice_id: int) -> int:
-        # TODO Day 3.
-        raise NotImplementedError("Day 3: implement PaymentAttemptRepository.count_for_invoice")
+    def mark_success(self, attempt_id: int) -> None:
+        """Mark a payment attempt as successful."""
+        query = """
+            UPDATE payment_attempts
+            SET status = 'SUCCESS'
+            WHERE id = ?
+        """
+        with self.db.transaction() as conn:
+            conn.execute(query, (attempt_id,))
+
+    def mark_failed(self, attempt_id: int) -> None:
+        """Mark a payment attempt as failed."""
+        query = """
+            UPDATE payment_attempts
+            SET status = 'FAIL'
+            WHERE id = ?
+        """
+        with self.db.transaction() as conn:
+            conn.execute(query, (attempt_id,))

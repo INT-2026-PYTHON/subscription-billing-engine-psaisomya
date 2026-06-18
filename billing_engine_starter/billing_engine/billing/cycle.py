@@ -113,33 +113,67 @@ class BillingCycle:
         return result
 
     def upgrade_subscription(self, subscription_id: int, new_plan_id: int, switch_date: date) -> None:
-        with self.db.transaction():
-            sub = self.subscription_repo.get_by_id(subscription_id)
-            if not sub:
-                raise ValueError(f"Subscription {subscription_id} not found.")
-                
-            old_plan = self.plan_repo.get_by_id(sub.plan_id)
-            new_plan = self.plan_repo.get_by_id(new_plan_id)
-            customer = self.customer_repo.get_by_id(sub.customer_id)
+        sub = self.subscription_repo.get(subscription_id)
+        old_plan = self.plan_repo.get(sub.plan_id)
+        new_plan = self.plan_repo.get(new_plan_id)
+        
+        total_days = (sub.current_period_end - sub.current_period_start).days
+        remaining_days = (sub.current_period_end - switch_date).days
+        
+        if total_days <= 0 or remaining_days <= 0:
+            return
+
+        old_prorated_credit = (old_plan.base_price.amount * remaining_days) / total_days
+        new_prorated_charge = (new_plan.base_price.amount * remaining_days) / total_days
+        net_amount_due = max(0, new_prorated_charge - old_prorated_credit)
+
+        customer = self.customer_repo.get(sub.customer_id)
+        tax_calculator, tax_context = self.tax_factory(customer)
+        
+        tax_amount = 0
+        if tax_calculator:
+            tax_amount = tax_calculator.calculate_tax(net_amount_due, tax_context)
+        
+        total_invoice_amount = net_amount_due + tax_amount
+
+        with self.db.transaction() as conn:
+            self.subscription_repo.update_plan(subscription_id, new_plan_id)
             
-            proration_result = compute_proration(
-                old_plan=old_plan,
-                new_plan=new_plan,
-                period_start=sub.current_period_start,
-                period_end=sub.current_period_end,
-                switch_date=switch_date
-            )
-            
-            if proration_result.net_amount > 0:
-                pass 
+            if total_invoice_amount > 0:
+                from billing_engine.models import Invoice, InvoiceLineItem
                 
-            if proration_result.net_amount != 0:
-                self.ledger_repo.post_transaction(
+                invoice_blueprint = Invoice(
+                    id=None,
+                    subscription_id=subscription_id,
                     customer_id=sub.customer_id,
-                    amount=proration_result.net_amount,
-                    description=f"Proration adjustment: Upgraded from {old_plan.name} to {new_plan.name}",
-                    reference_id=sub.id
+                    period_start=switch_date,
+                    period_end=sub.current_period_end,
+                    amount_due=total_invoice_amount,
+                    line_items=[]
                 )
+                saved_invoice = self.invoice_repo.add(invoice_blueprint)
                 
-            sub.plan_id = new_plan_id
-            self.subscription_repo.save(sub)
+                credit_line = InvoiceLineItem(
+                    id=None, invoice_id=saved_invoice.id, description="Old plan credit",
+                    amount=-old_prorated_credit, quantity=1, unit_price=-old_prorated_credit
+                )
+                charge_line = InvoiceLineItem(
+                    id=None, invoice_id=saved_invoice.id, description="New plan proration",
+                    amount=new_prorated_charge, quantity=1, unit_price=new_prorated_charge
+                )
+                self.line_item_repo.add(credit_line)
+                self.line_item_repo.add(charge_line)
+                
+                if tax_amount > 0:
+                    tax_line = InvoiceLineItem(
+                        id=None, invoice_id=saved_invoice.id, description="Proration tax",
+                        amount=tax_amount, quantity=1, unit_price=tax_amount
+                    )
+                    self.line_item_repo.add(tax_line)
+
+                self.ledger_repo.add(
+                    customer_id=sub.customer_id,
+                    amount=total_invoice_amount,
+                    direction=LedgerDirection.DEBIT,
+                    reason=f"Prorated upgrade invoice #{saved_invoice.id} adjustment"
+                )
