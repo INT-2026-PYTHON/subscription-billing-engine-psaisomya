@@ -32,10 +32,10 @@ from billing_engine.taxes.base import TaxCalculator, TaxContext
 
 @dataclass(frozen=True)
 class ProrationResult:
-    credit_amount: Money     # always returned as a POSITIVE Money; caller negates for line item
-    charge_amount: Money     # always positive
-    credit_tax: Money        # tax that was on the credit
-    charge_tax: Money        # tax that is on the new charge
+    credit_amount: Money     
+    charge_amount: Money     
+    credit_tax: Money        
+    charge_tax: Money        
 
 
 def compute_proration(
@@ -47,6 +47,27 @@ def compute_proration(
     tax_calc: TaxCalculator,
     tax_context: TaxContext,
 ) -> ProrationResult:
-    """Pure function. STRETCH — implement only after Days 1+2 are green."""
-    # TODO Day 4
-    raise NotImplementedError("Day 4: implement compute_proration")
+    total_days = (period_end - period_start).days
+    used_days = (switch_date - period_start).days
+    remaining_days = total_days - used_days
+
+    currency = old_plan_price.currency
+    
+    if total_days <= 0 or remaining_days <= 0:
+        zero_money = Money(amount=Decimal("0.00"), currency=currency)
+        return ProrationResult(zero_money, zero_money, zero_money, zero_money)
+
+    ratio = Decimal(remaining_days) / Decimal(total_days)
+    
+    credit_subtotal = old_plan_price.amount * ratio
+    charge_subtotal = new_plan_price.amount * ratio
+
+    credit_tax_res = tax_calc.apply(credit_subtotal, tax_context)
+    charge_tax_res = tax_calc.apply(charge_subtotal, tax_context)
+
+    return ProrationResult(
+        credit_amount=Money(amount=credit_subtotal, currency=currency),
+        charge_amount=Money(amount=charge_subtotal, currency=currency),
+        credit_tax=Money(amount=credit_tax_res.total, currency=currency),
+        charge_tax=Money(amount=charge_tax_res.total, currency=currency)
+    )
